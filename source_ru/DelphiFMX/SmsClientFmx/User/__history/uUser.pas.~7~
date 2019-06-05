@@ -1,0 +1,127 @@
+unit uUser;
+
+interface
+ uses
+  System.SysUtils, System.Types, System.UITypes, System.Classes, System.Variants,
+  FMX.Types;
+
+   Type
+    TUser = class
+  private
+    FipAddress: String;
+    fPort: WORD;
+    FErrMsg: String;
+    FErrType: String;
+    FSmsMsg: String;
+    FPassword: String;
+    FLogin: String;
+    FComments: String;
+    FisAuthorized: Boolean;
+    FTels: TList;
+    FisEncrypted: Boolean;
+    procedure SetipAddress(const Value: String);
+    procedure setPort(const Value: WORD);
+    procedure SetErrMsg(const Value: String);
+    procedure SetErrType(const Value: String);
+    procedure SetComments(const Value: String);
+    procedure SetLogin(const Value: String);
+    procedure SetPassword(const Value: String);
+    procedure SetSmsMsg(const Value: String);
+    procedure SetAuthorized(const Value: Boolean);
+    procedure SetTels(const Value: TList);
+    procedure SetEncrypted(const Value: Boolean);
+
+     public
+       Constructor Create;
+       Destructor Destroy;
+
+       property ipAddress: String read FipAddress write SetipAddress;
+       property Port: WORD read fPort write setPort;
+
+       property SmsMsg: String read FSmsMsg write SetSmsMsg;
+       property Comments: String read FComments write SetComments;
+
+       property isAuthorized: Boolean read FisAuthorized write SetAuthorized;
+       property isEncrypted: Boolean read FisEncrypted write SetEncrypted;
+
+
+       property Login: String read FLogin write SetLogin;
+       property Password: String read FPassword write SetPassword;
+
+       property Tels: TList read FTels write SetTels;
+
+       property ErrType: String read FErrType write SetErrType;
+       property ErrMsg: String read FErrMsg write SetErrMsg;
+
+    end;
+
+implementation
+
+{ TUser }
+
+constructor TUser.Create;
+begin
+
+end;
+
+destructor TUser.Destroy;
+begin
+
+end;
+
+procedure TUser.SetAuthorized(const Value: Boolean);
+begin
+  FisAuthorized := Value;
+end;
+
+procedure TUser.SetComments(const Value: String);
+begin
+  FComments := Value;
+end;
+
+procedure TUser.SetEncrypted(const Value: Boolean);
+begin
+  FisEncrypted := Value;
+end;
+
+procedure TUser.SetErrMsg(const Value: String);
+begin
+  FErrMsg := Value;
+end;
+
+procedure TUser.SetErrType(const Value: String);
+begin
+  FErrType := Value;
+end;
+
+procedure TUser.SetipAddress(const Value: String);
+begin
+  FipAddress := Value;
+end;
+
+procedure TUser.SetLogin(const Value: String);
+begin
+  FLogin := Value;
+end;
+
+procedure TUser.SetPassword(const Value: String);
+begin
+  FPassword := Value;
+end;
+
+procedure TUser.setPort(const Value: WORD);
+begin
+  fPort := Value;
+end;
+
+procedure TUser.SetSmsMsg(const Value: String);
+begin
+  FSmsMsg := Value;
+end;
+
+procedure TUser.SetTels(const Value: TList);
+begin
+  FTels := Value;
+end;
+
+end.

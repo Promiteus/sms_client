@@ -1,0 +1,151 @@
+unit uSimpleConnectionProtocol;
+
+interface
+ uses
+  System.SysUtils, System.Types, System.UITypes, System.Classes, System.Variants,
+  FMX.Types, FMX.Controls, uUser, uSmsClient, FMX.Dialogs;
+
+  Type
+   TCmdType = (ctGREETING, ctACCESS, ctSMS, ctUNKNOWN_CMD, ctCLOSE_SOCK);
+   TMsgType = (mtERR, mtINFO, mtINFO_IP, mtINFO_IP_SEND, mtERR_, mtINFO_);
+
+   TSimpleConnectionProtocol = class abstract
+     public
+        function hasCommand(cmd: String): Boolean; virtual; abstract;
+      	procedure parseCmd(cmd: String; stat: TCmdType); virtual; abstract;
+        procedure sendAuth(aUser: TUser); virtual; abstract;
+      	procedure sendSmsMsg(aUser: TUser); virtual; abstract;
+	      procedure sendGreeting(aUser: TUser); virtual; abstract;
+	      procedure sendConnectionStat(aUser: TUser); virtual; abstract;
+
+         class procedure MsgLog(aMsg: String; aObject: TObject; aMsgType: TMsgType; mMainFrm: TfrmSmsClient);
+         class procedure ServerErrLog(aUser: TUser; mMainFrm: TfrmSmsClient);
+         class procedure MsgDlg(aMsg: String);
+   end;
+
+   const
+   	KEY_LOGIN = 'username';
+	  KEY_PASS = 'password';
+   	KEY_COMMENTS = 'comments';
+    KEY_SMS_MSG = 'smsMessage';
+  	KEY_TEL_LIST = 'tels';
+    KEY_AUTH = 'auth';
+    KEY_STATUS = 'status';
+  	KEY_CRYPT = 'encryption';
+   	KEY_AUTHORIZED = 'authorized';
+   	KEY_ERR_TYPE = 'errType';
+    KEY_ERR_MSG = 'errMsg';
+    KEY_SOCK_CLOSE = 'closeSocket';
+
+    PROT_HELLO = 'greeting';
+    PROT_AUTH = 'auth';
+	  PROT_SMS = 'sms';
+   	PROT_UNKNOWN = 'error';
+    PROT_CONNECTION = 'connection';
+
+    ERR_INFO = 'Error [class: %s] >> описание: %s';
+    ERR_INFO_SERVER = '[Server error]: %s << %s:%d << [Type: %s] описание: %s';
+    MSG_INFO = 'Info [class: %s] >> %s';
+  	MSG_INFO_MAIN = 'Info [main] >> %s';
+    MSG_INFO_IP = '[Server]: %s << %s:%d << %s';
+    MSG_INFO_IP_SEND = '[Client]: %s >> %s:%d >> %s';
+    MSG_INFO_CLOSE_SOCKET = 'Соединение с сервером закрыто...';
+    MSG_INFO_TASK_NOT_COMPLETED = 'Задание на передачу еще не выполнено!';
+    MSG_INFO_EMPTY_TELS = 'Не указанны адресаты для SMS!';
+
+    MSG_COMMENT_GREATING_SERVER = 'Hello, Server! I want to send some SMS messages...';
+    MSG_COMMENT_AUTH_TO_SERVER = 'Trying to log in...';
+    MSG_COMMENT_SMS_SENDING = 'Trying to send SMS List...';
+    MSG_COMMENT_TEST_COMPLITE = 'Compliting test...';
+    MSG_COMMENT_GREATING_SERVER_TEST = 'Hello, Server! I want to test connection with you...';
+
+    WARN_CONNECTION_ERROR = 'Ошибка связи с сервером! Убедитесь, что сервер запущен и вы верно указали порт и IP адрес сервера. Также, проверьте на сервере, не попали ли вы в черный список.';
+    WARN_ACCESS_DENINED = 'Неверный логин или пароль! Проверьте логин и пароль на сервере, так как они должны совпадать!';
+    WARN_UNCKNOWN_USER = 'Нет такой комбинации логина и пароля в БД!';
+    WARN_NOT_EQUALS_OF_FIELDS = 'Оба поля ввода должны содержать одинаковые значения и не быть пустыми!';
+    WARN_EMPTY_SMS_MESSAGE = 'SMS сообщение не должно быть пустым!';
+    WARN_EMPTY_CONTACTS_LIST = 'Добавьте хотя бы один телефонный номер для отправки SMS!';
+
+    WARN_EMPTY_FILENAME = 'Имя файла *.txt со списком контактов не указанно!';
+    WARN_EMPTY_PHONE_LIST_IN_FILE = 'Путой список номеров в выбранном файле файле!';
+
+    ERR_CANT_DELETE_HISTORY_ITEM = 'Не могу удалить указанную запись!';
+
+    HEADER_CONTACTS_LIST = 'КОНТАКТЫ ДЛЯ РАССЫЛКИ: %d';
+
+    INFO_ACCOUNT_PARAMS_WERE_CHANGED = 'Параметры учетной записи изменены! Не забудте указать такие же в настройках SMS сервере!';
+
+    CONNECTION_TIMEOUT = 10000;
+
+    ERR_NOT_JSON = '"%s" не является Json объектом!';
+
+    PAR_BASE_DRIVER_VAL = 'SQLite';
+    PAR_CHARACTER_SET_VAL = 'utf-8';
+    PAR_DATA = 'Database';
+    PAR_BASE_DRIVER = 'DriverID';
+    PAR_CHARACTER_SET = 'CharacterSet';
+
+implementation
+
+
+
+{ TSimpleConnectionProtocol }
+
+class procedure TSimpleConnectionProtocol.MsgDlg(aMsg: String);
+begin
+ TThread.Synchronize(TThread.CurrentThread,
+ procedure
+ begin
+   showmessage(aMsg);
+ end);
+end;
+
+class procedure TSimpleConnectionProtocol.MsgLog(aMsg: String; aObject: TObject;
+  aMsgType: TMsgType; mMainFrm: TfrmSmsClient);
+begin
+ TThread.Synchronize(TThread.CurrentThread,
+ procedure
+ begin
+   case aMsgType of
+
+     mtERR: mMainFrm.mmLogger.Lines.Add(Format(ERR_INFO, [aObject.ClassName, aMsg]));
+
+     mtERR_: ShowMessage(aMsg);
+
+
+
+     mtINFO:
+      begin
+        if aObject = nil then
+           mMainFrm.mmLogger.Lines.Add(Format(MSG_INFO, ['nil', aMsg]))
+        else
+           mMainFrm.mmLogger.Lines.Add(Format(MSG_INFO_MAIN, [aMsg]));
+      end;
+     mtINFO_IP:
+
+      if aObject.ClassName = TUser.ClassName then
+       mMainFrm.mmLogger.Lines.Add(Format(MSG_INFO_IP,
+         [FormatDateTime('dd.mm.yyyy hh:mm:ss', now()), TUser(aObject).ipAddress,
+          TUSer(aObject).Port, aMsg]));
+
+     mtINFO_IP_SEND:
+
+      if aObject.ClassName = TUser.ClassName then
+         mMainFrm.mmLogger.Lines.Add(Format(MSG_INFO_IP_SEND,
+         [FormatDateTime('dd.mm.yyyy hh:mm:ss', now()), TUser(aObject).ipAddress,
+          TUSer(aObject).Port, aMsg]));
+   end;
+ end);
+end;
+
+class procedure TSimpleConnectionProtocol.ServerErrLog(aUser: TUser; mMainFrm: TfrmSmsClient);
+begin
+ TThread.Synchronize(TThread.CurrentThread,
+ procedure
+ begin
+   mMainFrm.mmLogger.Lines.Add(Format(ERR_INFO_SERVER, [FormatDateTime('dd.mm.yyyy hh:mm:ss',
+    now()), aUser.ipAddress, aUser.Port, aUser.ErrType, aUSer.ErrMsg]));
+ end);
+end;
+
+end.

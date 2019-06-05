@@ -1,0 +1,547 @@
+unit uDM;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, IdBaseComponent, IdComponent, System.Threading,
+  IdTCPConnection, IdTCPClient, uUser, uSimpleConnectionProtocol, uSmsClient, FMX.Forms,
+  FMX.Types, FMX.Dialogs, FireDAC.Stan.Intf, FireDAC.Stan.Option,
+  FireDAC.Stan.Error, FireDAC.UI.Intf, FireDAC.Phys.Intf, FireDAC.Stan.Def,
+  FireDAC.Stan.Pool, FireDAC.Stan.Async, FireDAC.Phys, FireDAC.FMXUI.Wait,
+  FireDAC.Stan.Param, FireDAC.DatS, FireDAC.DApt.Intf, FireDAC.DApt, Data.DB,
+  FireDAC.Comp.DataSet, FireDAC.Comp.Client, FireDAC.Phys.SQLite, System.IOUtils,
+  FireDAC.Phys.SQLiteDef, FireDAC.Stan.ExprFuncs, Math, System.JSON;
+
+type
+  TDM = class(TDataModule)
+    IdTCPClient: TIdTCPClient;
+    odTelList: TOpenDialog;
+    FDConnection: TFDConnection;
+    FDTransaction: TFDTransaction;
+    fdQGetHistorySmsSending: TFDQuery;
+    fdAddNewUser: TFDQuery;
+    fdAddNewSendHistory: TFDQuery;
+    fdQGetUserId: TFDQuery;
+    fdQFreeCmd: TFDQuery;
+    fdQGetHistorySmsSendingID_CONTACTS: TFDAutoIncField;
+    fdQGetHistorySmsSending_NAME: TWideStringField;
+    fdQGetHistorySmsSending_DATE: TDateTimeField;
+    fdQGetHistorySmsSendingCONT_LIST: TWideMemoField;
+    fdQInserOrUpdateSendHistory: TFDQuery;
+    procedure DataModuleCreate(Sender: TObject);
+  private
+    FTcpTask: ITask;
+    { Private declarations }
+    property TcpTask: ITask read FTcpTask write FTcpTask;
+
+    procedure ShowConnectionInfo(aUser: TUser; aMsgInfo: String);
+
+    procedure InitBaseConnection(ADataBase: String);
+  public
+    { Public declarations }
+    procedure SendSMS(aFrm: TfrmSmsClient; aUser: TUser; isAuthTest: Boolean = false);
+
+    procedure OnSendCmdData(aUser: TUser; aCmd: String);
+    procedure OnReadCmdData(CmdType: TCmdType; aCmd: String; aUser: TUser);
+    procedure OnConnServerStatus(aUser: TUser);
+
+    function AddNewUser(aUser: TUser): Integer;
+    function CheckUserId(aUser: TUser): Integer;
+    function UpdateUserParam(achParam: String; aUserId: Integer; isLogin: Boolean = true): Boolean;
+    function AddNewContactsHistory(aName: String; aContacts: String; aUserId: Integer): Boolean;
+    function AddOrUpdateContactsHistory(aName: String; aContacts: String; aUserId: Integer): Boolean;
+
+    function GetHistorySmsSending(aUserId: Integer): Integer;
+    function DeleteHistoryItem(aItemId: Integer): Boolean;
+
+    function GetPhonesListFromTxtFile(aFile: String): TStrings;
+
+    function GetJsonContactHistory(aList: TStrings): String;
+    procedure GetContactHistoryFromJson(aJson: String);
+  end;
+
+var
+  DM: TDM;
+
+implementation
+
+{%CLASSGROUP 'FMX.Controls.TControl'}
+
+uses  uSCP;
+
+
+
+{$R *.dfm}
+
+{ TDM }
+
+function TDM.AddNewContactsHistory(aName: String; aContacts: String; aUserId: Integer): Boolean;
+begin
+ result:=false;
+ if (aName.IsEmpty) or (aContacts.IsEmpty) or (aUserId <= 0) then Exit;
+
+
+  try
+    if not FDConnection.Connected  then
+      FDConnection.Connected:=true;
+
+    fdAddNewSendHistory.Close;
+
+    fdAddNewSendHistory.Params[0].Value:=aName;
+    fdAddNewSendHistory.Params[1].Value:=FormatDateTime('dd.mm.yyyy hh:mm', Now());
+    fdAddNewSendHistory.Params[2].Value:=aUserId;
+    fdAddNewSendHistory.Params[3].Value:=aContacts;
+
+    fdAddNewSendHistory.OpenOrExecute;
+
+    result:=true;
+  except
+     on E: Exception do
+     begin
+         TSimpleConnectionProtocol.MsgDlg(E.Message);
+         Exit;
+     end;
+  end;
+end;
+
+function TDM.AddNewUser(aUser: TUser): Integer;
+begin
+ result:=-1;
+  try
+    if not FDConnection.Connected  then
+      FDConnection.Connected:=true;
+
+
+    fdAddNewUser.Close;
+    fdAddNewUser.Params[0].Value:=aUser.Login;
+    fdAddNewUser.Params[1].Value:=aUser.Password;
+    fdAddNewUser.Params[2].Value:=aUser.Login;
+
+    fdAddNewUser.OpenOrExecute;
+
+    if fdAddNewUser.RecordCount > 0 then
+      result:=fdAddNewUser.Fields.Fields[0].Value;
+
+  except
+     on E: Exception do
+     begin
+         TSimpleConnectionProtocol.MsgLog(E.Message, nil, mtErr_, nil);
+         Exit;
+     end;
+  end;
+end;
+
+
+
+function TDM.AddOrUpdateContactsHistory(aName, aContacts: String;
+  aUserId: Integer): Boolean;
+begin
+ result:=false;
+ if (aName.IsEmpty) or (aContacts.IsEmpty) or (aUserId <= 0) then Exit;
+
+
+  try
+    if not FDConnection.Connected  then
+      FDConnection.Connected:=true;
+
+    fdQInserOrUpdateSendHistory.Close;
+
+    fdQInserOrUpdateSendHistory.Params[0].Value:=aName;
+    fdQInserOrUpdateSendHistory.Params[1].Value:=FormatDateTime('dd.mm.yyyy hh:mm:ss', Now());
+    fdQInserOrUpdateSendHistory.Params[2].Value:=aUserId;
+    fdQInserOrUpdateSendHistory.Params[3].Value:=aContacts;
+
+    fdQInserOrUpdateSendHistory.OpenOrExecute;
+
+    result:=true;
+  except
+     on E: Exception do
+     begin
+         TSimpleConnectionProtocol.MsgDlg(E.Message);
+         Exit;
+     end;
+  end;
+end;
+
+function TDM.CheckUserId(aUser: TUser): Integer;
+begin
+ result:=-1;
+  try
+    if not FDConnection.Connected  then
+      FDConnection.Connected:=true;
+
+    fdQGetUserId.Close;
+
+    fdQGetUserId.Params[0].Value:=aUser.Login;
+    fdQGetUserId.Params[1].Value:=aUser.Password;
+
+    fdQGetUserId.OpenOrExecute;
+
+    if fdQGetUserId.RecordCount > 0 then
+      result:=fdQGetUserId.Fields.Fields[0].Value;
+
+  except
+     on E: Exception do
+     begin
+         TSimpleConnectionProtocol.MsgDlg(E.Message);
+         Exit;
+     end;
+  end;
+end;
+
+
+
+procedure TDM.DataModuleCreate(Sender: TObject);
+var
+ _fileName: String;
+const
+ DATABASE_NAME = 'db/SmsData.db';
+ DB_FILE_NOT_FOUND = 'Файл БД не найден!';
+begin
+     {$IFDEF MSWINDOWS}
+       _fileName:=TDirectory.GetCurrentDirectory+PathDelim+DATABASE_NAME;
+       if TFile.Exists(_fileName) then
+       begin
+          //FDConnection
+       end
+       else
+        TSimpleConnectionProtocol.MsgDlg(DB_FILE_NOT_FOUND);
+    {$ENDIF}
+end;
+
+function TDM.DeleteHistoryItem(aItemId: Integer): Boolean;
+ const
+   SQL = 'DELETE FROM CONTACTS WHERE ID_CONTACTS = :pcont';
+begin
+  result:=false;
+  try
+    if not FDConnection.Connected  then
+      FDConnection.Connected:=true;
+
+    fdQFreeCmd.Close;
+    fdQFreeCmd.SQL.Clear;
+    fdQFreeCmd.SQL.Add(SQL);
+
+    fdQFreeCmd.Params[0].Value:=aItemId;
+    fdQFreeCmd.ExecSQL;
+
+    result:=true;
+  except
+     on E: Exception do
+     begin
+         TSimpleConnectionProtocol.MsgDlg(E.Message);
+         Exit;
+     end;
+  end;
+end;
+
+
+
+procedure TDM.GetContactHistoryFromJson(aJson: String);
+var
+  lJsonObject: TJsonObject;
+  lJsonArray: TJsonArray;
+  lEnum: TJsonArray.TEnumerator;
+  lStrItem: String;
+begin
+  if aJson.IsEmpty then Exit;
+
+  lJsonArray:=TJsonArray.Create;
+
+  lJsonObject:=TJsonObject.ParseJSONValue(aJson) as TJsonObject;
+  if lJsonObject <> nil then
+  begin
+     if lJsonObject.GetValue('contacts').ClassName.Equals('TJSONArray') then
+      begin
+         lJsonArray:=lJsonObject.GetValue('contacts') as TJSONArray;
+         lEnum:=TJsonArray.TEnumerator.Create(lJsonArray);
+
+          while lEnum.MoveNext do
+          begin
+            lStrItem:=StringReplace(lEnum.GetCurrent.ToJSON.Trim, '"',
+               String.empty,[rfReplaceAll, rfIgnoreCase]);
+            frmSmsClient.AddPhoneContactItem(lStrItem);
+          end;
+      end;
+  end;
+end;
+
+
+
+function TDM.GetHistorySmsSending(aUserId: Integer): Integer;
+begin
+ result:=-1;
+  try
+    if not FDConnection.Connected  then
+      FDConnection.Connected:=true;
+
+    fdQGetHistorySmsSending.Close;
+    fdQGetHistorySmsSending.Params[0].Value:=aUserId;
+    fdQGetHistorySmsSending.OpenOrExecute;
+
+    result:=fdQGetHistorySmsSending.RecordCount;
+
+  except
+     on E: Exception do
+     begin
+         TSimpleConnectionProtocol.MsgDlg(E.Message);
+         Exit;
+     end;
+  end;
+end;
+
+
+
+function TDM.GetJsonContactHistory(aList: TStrings): String;
+var
+  lJObject: TJsonObject;
+  lJContactsArray: TJsonArray;
+  lPhoneContact: String;
+begin
+ result:=String.Empty;
+  if (aList = nil) or (aList.Count = 0) then Exit;
+
+  try
+    lJObject:=TJsonObject.Create;
+    lJContactsArray:=TJsonArray.Create;
+
+    for lPhoneContact in aList do
+       lJContactsArray.Add(lPhoneContact);
+
+    lJObject.AddPair('contacts', lJContactsArray);
+
+    result:=lJObject.ToJSON;
+  finally
+    lJObject.Free;
+  end;
+end;
+
+function TDM.GetPhonesListFromTxtFile(aFile: String): TStrings;
+var
+ lFile: TFileStream;
+ lBuff: TStrings;
+begin
+  result:=nil;
+   if aFile.IsEmpty then
+   begin
+     TSimpleConnectionProtocol.MsgDlg(WARN_EMPTY_FILENAME);
+     Exit;
+   end;
+
+   try
+    lBuff:=TStringList.Create;
+    try
+     lFile:=TFileStream.Create(aFile, fmOpenRead);
+     lFile.Position:=0;
+     lBuff.LoadFromStream(lFile);
+
+     result:=lBuff;
+    except
+      on E: Exception do
+      begin
+        TSimpleConnectionProtocol.MsgDlg(E.Message);
+        Exit;
+      end;
+    end;
+   finally
+     lFile.Free;
+   end;
+end;
+
+procedure TDM.InitBaseConnection(ADataBase: String);
+const
+  PAR_BASE_DRIVER_VAL = 'SQLite';
+  PAR_CHARACTER_SET_VAL = 'utf-8';
+  PAR_DATA = 'Database';
+  PAR_BASE_DRIVER = 'DriverID';
+  PAR_CHARACTER_SET = 'CharacterSet';
+begin
+  try
+    with FDConnection do
+    begin
+      LoginPrompt:=false;
+      Params.Clear;
+      Params.Values[PAR_BASE_DRIVER]:=PAR_BASE_DRIVER_VAL;
+      Params.Values[PAR_DATA] := ADataBase;
+      Params.Values[PAR_CHARACTER_SET] := PAR_CHARACTER_SET_VAL;
+      Connected:=true;
+    end;
+  except
+    on E: Exception do
+    begin
+      TSimpleConnectionProtocol.MsgDlg(E.Message);
+      Exit;
+    end;
+  end;
+end;
+
+procedure TDM.OnConnServerStatus(aUser: TUser);
+begin
+  TThread.Synchronize(TThread.CurrentThread,
+  procedure
+  begin
+   if frmSmsClient.GetTabIndex = 0 then
+   begin
+      if (aUser.isAuthorized) and (AddNewUser(aUser) > 0) then
+       frmSmsClient.GoToSmsPanel
+      else if ((not aUser.isAuthorized) and (aUSer.ErrMsg.IsEmpty)) then
+       showmessage(WARN_ACCESS_DENINED)
+      else if ((not aUser.isAuthorized) and (not aUSer.ErrMsg.IsEmpty)) then
+       showmessage(WARN_CONNECTION_ERROR);
+   end;
+  end);
+end;
+
+
+
+procedure TDM.OnReadCmdData(CmdType: TCmdType; aCmd: String;
+  aUser: TUser);
+begin
+  TThread.Synchronize(TThread.CurrentThread,
+  procedure
+  begin
+   TSimpleConnectionProtocol.MsgLog(aCmd, aUser, mtINFO_IP, frmSmsClient);
+  end);
+end;
+
+
+
+procedure TDM.OnSendCmdData(aUser: TUser; aCmd: String);
+begin
+  TThread.Synchronize(TThread.CurrentThread,
+  procedure
+  begin
+    TSimpleConnectionProtocol.MsgLog(aCmd, aUser, mtINFO_IP_SEND, frmSmsClient);
+  end);
+end;
+
+
+
+procedure TDM.SendSMS(aFrm: TfrmSmsClient; aUser: TUser; isAuthTest: Boolean);
+var
+ _Scp: TSCP;
+begin
+  if aUser = nil then Exit;
+  
+  if aFrm.edServerIP.Text.IsEmpty or aFrm.edServerPort_.Text.IsEmpty then
+  begin
+    TSimpleConnectionProtocol.MsgLog('', self, TMsgType.mtINFO, aFrm);
+    Exit();
+  end;
+
+    IdTCPClient.Host:=aUser.ipAddress;
+    IdTCPClient.Port:=aUser.Port;
+
+    if (aUser.Tels.Count = 0) and (not isAuthTest) then
+    begin
+      TSimpleConnectionProtocol.MsgLog(MSG_INFO_EMPTY_TELS, self, mtINFO, aFrm);
+      Exit;
+    end;
+
+    IdTCPClient.ConnectTimeout:=CONNECTION_TIMEOUT;
+    //IdTCPClient.Socket.ReadTimeout:=IdTCPClient.ConnectTimeout;
+
+    aFrm.ConnProgressAnim(aFrm.aiConnectionProgress, true);
+    if (FTcpTask = nil) or ((FTcpTask <> nil) and (FTcpTask.Status = TTaskStatus.Completed)) then
+    begin //Создать задание по передаче SMS сообщений
+     FTcpTask:=TTask.Create(
+     procedure
+     var
+      t_cmd: string;
+     begin
+   //   aFrm.SetEnabledSendSmsButton(false);
+
+       try
+        if not IdTCPClient.Connected then
+          IdTCPClient.Connect;
+       except
+          on E: Exception do
+          begin
+            TSimpleConnectionProtocol.MsgLog(E.Message, self, mtErr, aFrm);
+            aFrm.ConnProgressAnim(aFrm.aiConnectionProgress, false);
+            ShowConnectionInfo(aUser, E.Message);
+            aFrm.SetEnabledSendSmsButton(true);
+            Exit;
+          end;
+       end;
+
+       try
+        _Scp:=TSCP.Create(IdTCPClient, aUser, isAuthTest);
+        _Scp.OnDataSendCmd:=OnSendCmdData;
+        _Scp.OnDataReadCmd:=OnReadCmdData;
+        _Scp.OnConnServerSuccess:=OnConnServerStatus;
+
+          while IdTCPClient.Connected do
+          begin
+           try
+            t_cmd:=IdTCPClient.Socket.ReadLn;
+            if not _Scp.hasCommand(t_cmd) then
+              break
+            else
+              TThread.Yield;
+
+           except
+            on E: Exception do
+            begin
+              TSimpleConnectionProtocol.MsgLog(E.Message, self, mtErr, aFrm);
+              aFrm.ConnProgressAnim(aFrm.aiConnectionProgress, false);
+              break;
+            end;
+           end;
+          end;
+
+        TSimpleConnectionProtocol.MsgLog(MSG_INFO_CLOSE_SOCKET, aUser, mtINFO_IP, aFrm);
+       finally
+        if IdTCPClient.Connected then
+            IdTCPClient.DisconnectNotifyPeer;
+
+         aFrm.ConnProgressAnim(aFrm.aiConnectionProgress, false);
+        _Scp.Free;
+       end;
+     end);
+     FTcpTask.Start;
+    end
+    else //Ожидайте выполнения задания
+      TSimpleConnectionProtocol.MsgLog(MSG_INFO_TASK_NOT_COMPLETED, self, mtINFO, aFrm);
+
+end;
+
+
+procedure TDM.ShowConnectionInfo(aUser: TUser; aMsgInfo: String);
+begin
+   aUser.ErrMsg:=aMsgInfo;
+   OnConnServerStatus(aUser);
+end;
+
+
+function TDM.UpdateUserParam(achParam: String; aUserId: Integer; isLogin: Boolean): Boolean;
+ const
+   SQL_LOGIN_UPDATE = 'update or ignore USERS Set LOGIN = :pLog where ID_USER = :pId;';
+   SQL_PASSW_UPADTE = 'update or ignore USERS set PASS = :pPass where ID_USER = :pId;';
+ var
+  _Sql: String;
+begin
+ result:=false;
+
+ try
+   fdQFreeCmd.Close;
+   fdQFreeCmd.SQL.Clear;
+
+   if isLogin then _Sql:=SQL_LOGIN_UPDATE else _Sql:=SQL_PASSW_UPADTE;
+
+   fdQFreeCmd.SQL.Add(_Sql);
+   fdQFreeCmd.Params[0].Value:=achParam;
+   fdQFreeCmd.Params[1].Value:=aUserId;
+   fdQFreeCmd.ExecSQL;
+
+   result:=true;
+ except
+   on E: Exception do
+   begin
+         TSimpleConnectionProtocol.MsgLog(E.Message, nil, mtErr_, nil);
+         Exit;
+   end;
+ end;
+end;
+
+end.

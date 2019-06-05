@@ -1,0 +1,19 @@
+program SmsClient;
+
+uses
+  System.StartUpCopy,
+  FMX.Forms,
+  uSmsClient in 'uSmsClient.pas' {frmSmsClient},
+  uDM in 'uDM.pas' {DataModule1: TDataModule},
+  uISCP in 'Model\uISCP.pas',
+  uUser in 'User\uUser.pas',
+  uScpJsonFormatter in 'Model\ScpJsonFormatter\uScpJsonFormatter.pas';
+
+{$R *.res}
+
+begin
+  Application.Initialize;
+  Application.CreateForm(TfrmSmsClient, frmSmsClient);
+  Application.CreateForm(TDataModule1, DataModule1);
+  Application.Run;
+end.

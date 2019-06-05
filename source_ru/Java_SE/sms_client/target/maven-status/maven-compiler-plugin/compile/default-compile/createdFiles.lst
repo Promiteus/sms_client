@@ -1,0 +1,13 @@
+com\roman\sms_client\App.class
+com\roman\sms_client\model\scp\ScpJsonFormat.class
+com\roman\sms_client\App$1.class
+com\roman\sms_client\model\SimpleConnectionProtocol$CmdType.class
+com\roman\sms_client\model\SimpleConnectionProtocol$MsgType.class
+com\roman\sms_client\user\User.class
+com\roman\sms_client\model\scp\SCP$1.class
+com\roman\sms_client\model\SimpleConnectionProtocol$1.class
+com\roman\sms_client\model\SimpleConnectionProtocol.class
+com\roman\sms_client\sms_sender\SmsService$1.class
+com\roman\sms_client\model\scp\SCP.class
+com\roman\sms_client\model\SmsServerStatusUI.class
+com\roman\sms_client\sms_sender\SmsService.class

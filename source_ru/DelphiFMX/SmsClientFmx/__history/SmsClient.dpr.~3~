@@ -1,0 +1,17 @@
+program SmsClient;
+
+uses
+  System.StartUpCopy,
+  FMX.Forms,
+  uSmsClient in 'uSmsClient.pas' {Form1},
+  uDM in 'uDM.pas' {DataModule1: TDataModule},
+  uISCP in 'Model\uISCP.pas';
+
+{$R *.res}
+
+begin
+  Application.Initialize;
+  Application.CreateForm(TForm1, Form1);
+  Application.CreateForm(TDataModule1, DataModule1);
+  Application.Run;
+end.

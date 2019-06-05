@@ -1,0 +1,281 @@
+unit uSCP;
+
+interface
+ uses
+  System.SysUtils, System.Types, System.UITypes, System.Classes, System.Variants,
+  FMX.Types, FMX.Controls, uUser, uSmsClient, uSimpleConnectionProtocol, IdComponent,
+  IdTCPConnection, IdTCPClient, idGlobal, IdBaseComponent;
+
+ type TSendCmdDataNotify = procedure(aUser: TUser; aCmd: String) of object;
+ type TReadCmdDataNotify = procedure(CmdType: TCmdType; aCmd: String; aUser: TUser) of object;
+ type TConnServerStatusNotify = procedure (aUser: TUser) of Object;
+
+ type
+  TSCP = class(TSimpleConnectionProtocol)
+  private
+    FTcpClient: TidTCPClient;
+    FUser: TUser;
+    FAuthTest: Boolean;
+    FDataSendCmdNotify: TSendCmdDataNotify;
+    FDataReadCmdNotify: TReadCmdDataNotify;
+    FConnServerSuccess: TConnServerStatusNotify;
+    procedure SetUser(const Value: TUser);
+    procedure SendData(aCmd: String);
+    procedure DoSendCmdData(aUser: TUser; aCmd: String);
+    procedure DoReadCmdData(CmdType: TCmdType; aCmd: String; aUser: TUser);
+    procedure DoConnServerStatus(aUser: TUser);
+  public
+        function hasCommand(cmd: String): Boolean; virtual;
+      	procedure parseCmd(cmd: String; stat: TCmdType); virtual;
+        procedure sendAuth(aUser: TUser); virtual;
+      	procedure sendSmsMsg(aUser: TUser); virtual;
+	      procedure sendGreeting(aUser: TUser); virtual;
+	      procedure sendConnectionStat(aUser: TUser); virtual;
+
+        Constructor Create(aIdTCP: TidTCPClient; aUser: TUser; isAuthTest: Boolean = false);
+        Destructor Destroy;
+
+        property User: TUser read FUser write SetUser;
+        property TcpClient: TidTCPClient read FTcpClient write FTcpClient;
+
+        property OnDataSendCmd: TSendCmdDataNotify read FDataSendCmdNotify write FDataSendCmdNotify;
+        property OnDataReadCmd: TReadCmdDataNotify read FDataReadCmdNotify write FDataReadCmdNotify;
+        property OnConnServerSuccess: TConnServerStatusNotify read FConnServerSuccess write FConnServerSuccess;
+  end;
+
+implementation
+
+{ TSCP }
+
+uses uScpJsonFormatter;
+
+constructor TSCP.Create(aIdTCP: TidTCPClient; aUser: TUser; isAuthTest: Boolean);
+begin
+   FUser:=aUser;
+   FTcpClient:=aIdTcp;
+
+   sendGreeting(aUser);
+   FAuthTest:=isAuthTest;
+
+   //TSimpleConnectionProtocol.MsgDlg(FUser.Tels.Text);
+end;
+
+destructor TSCP.Destroy;
+begin
+
+end;
+
+procedure TSCP.DoConnServerStatus(aUser: TUser);
+begin
+  if Assigned(FConnServerSuccess) then
+    FConnServerSuccess(aUser);
+end;
+
+procedure TSCP.DoReadCmdData(CmdType: TCmdType; aCmd: String;
+  aUser: TUser);
+begin
+  if Assigned(FDataReadCmdNotify) then
+   FDataReadCmdNotify(CmdType, aCmd, aUser);
+end;
+
+procedure TSCP.DoSendCmdData(aUser: TUser; aCmd: String);
+begin
+  if Assigned(FDataSendCmdNotify) then
+   FDataSendCmdNotify(aUser, aCmd);
+end;
+
+function TSCP.hasCommand(cmd: String): Boolean;
+begin
+ result:=false;
+ if FUser = nil then Exit;
+
+ if pos(PROT_HELLO, cmd) <> 0 then
+ begin
+    parseCmd(cmd, TCmdType.ctGREETING);
+    if FUser.isAuthorized then
+    begin
+     if not FAuthTest then
+        sendSmsMsg(FUser)
+     else
+     begin
+         //Увеломить о статусе авторизации
+         DoConnServerStatus(FUser);
+         //Сразу закрыть соединение после получения статуса авторизации
+         FUser.ClosedSocket:=true;
+         sendConnectionStat(FUser);
+     end;
+    end
+    else
+    begin
+      FUser.Comments:=MSG_COMMENT_AUTH_TO_SERVER;
+      sendAuth(FUser);
+    end;
+
+    result:=true;
+    Exit;
+ end
+ else
+ if pos(PROT_AUTH, cmd) <> 0 then
+ begin
+	  parseCmd(cmd, TCmdType.ctACCESS);
+	  if not (FUser.isAuthorized) then
+    begin
+       TSimpleConnectionProtocol.MsgDlg(WARN_ACCESS_DENINED);
+
+	     result:=false;
+       Exit;
+    end
+	  else
+    begin
+       //TSimpleConnectionProtocol.MsgDlg('Ok!');
+       FUser.Comments:=MSG_COMMENT_SMS_SENDING;
+
+       if not FAuthTest then //Отправить SMS после успешной авторизации
+	       sendSmsMsg(FUser)
+       else
+       begin //Тестовое соединение без отправки SMS
+         //Сразу закрыть соединение после получения статуса авторизации
+         FUser.ClosedSocket:=true;
+         sendConnectionStat(FUser);
+       end;
+    end;
+
+    //Увеломить о статусе авторизации
+    DoConnServerStatus(FUser);
+    result:=true;
+    Exit;
+ end
+ else
+ if pos(PROT_SMS, cmd) <> 0 then
+ begin
+   parseCmd(cmd, TCmdType.ctSMS);
+   result:=false;
+   Exit;
+ end
+ else
+ if pos(PROT_CONNECTION, cmd) <> 0 then
+ begin
+   parseCmd(cmd, TCmdType.ctCLOSE_SOCK);
+   if FUser.ClosedSocket then
+      result:=false
+   else
+      result:=true;
+
+   Exit;
+ end
+ else
+ if pos(PROT_UNKNOWN, cmd) <> 0 then
+ begin
+   parseCmd(cmd, TCmdType.ctUNKNOWN_CMD);
+   result:=false;
+   Exit;
+ end;
+
+  result:=false;
+end;
+
+procedure TSCP.parseCmd(cmd: String; stat: TCmdType);
+begin
+  if FUser = nil then Exit;
+  FUser.CmdMsg:=cmd;
+
+
+
+   case stat of
+     ctGREETING:
+       FUser := TSCPJsonFormatter.getJsonGreetingData(cmd, FUser);
+     ctACCESS:
+       FUser := TSCPJsonFormatter.getJsonAuthData(cmd, FUser);
+     ctSMS:
+       FUser := TSCPJsonFormatter.getJsonSmsData(cmd, FUser);
+     ctUNKNOWN_CMD:
+       FUser := TSCPJsonFormatter.getJsonErrorData(cmd, FUser);
+     ctCLOSE_SOCK:
+       FUser := TSCPJsonFormatter.getJsonConnectionData(cmd, FUser);
+   end;
+   DoReadCmdData(stat, cmd, FUser);
+end;
+
+procedure TSCP.sendAuth(aUser: TUser);
+var
+ _cmd: String;
+begin
+  _cmd:=TSCPJsonFormatter.createAuthJsonString(aUser);
+ // TSimpleConnectionProtocol.MsgLog('Log.d >> '+_Cmd, nil, mtINFO, frmSmsClient);
+  SendData(_cmd);
+  DoSendCmdData(aUser, _cmd);
+end;
+
+procedure TSCP.sendConnectionStat(aUser: TUser);
+var
+ _cmd: String;
+begin
+ _cmd:=TSCPJsonFormatter.createConnectionJsonString(aUser);
+ SendData(_cmd);
+ DoSendCmdData(aUser, _cmd);
+end;
+
+procedure TSCP.SendData(aCmd: String);
+//var
+// lDataStrings: TStrings;
+ //lDataStream: TStream;
+begin
+  //try
+  // lDataStrings:=TStringList.Create;
+  // lDataStream:=TMemoryStream.Create;
+  // lDataStream.Position:=0;
+
+   if (FTcpClient = nil) or (aCmd.IsEmpty) or (aCmd = null) then Exit;
+   // FTcpClient.Socket.WriteLn(TEncoding.UTF8.GetString(BytesOf(aCmd)));
+   // FTcpClient.IOHandler.Write(TEncoding.UTF8.GetString(BytesOf(aCmd))); //
+
+  //  lDataStrings.Add(aCmd);
+  //  lDataStrings.SaveToStream(lDataStream);
+    try
+     if FTcpClient.Connected then
+     begin
+        FTcpClient.Socket.Writeln(aCmd);
+
+     end;
+    except
+      on E: Exception do
+      begin
+         TSimpleConnectionProtocol.MsgLog('Error >> '+e.Message, nil, mtErr, frmSmsClient);
+         Exit;
+      end;
+
+     //TSimpleConnectionProtocol.MsgLog('Log.d >> '+aCmd, nil, mtINFO, frmSmsClient);
+   end;
+  //finally
+ //   lDataStrings.Free;
+ //   lDataStream.Free;
+ // end;
+end;
+
+procedure TSCP.sendGreeting(aUser: TUser);
+var
+ _cmd: String;
+begin
+ _cmd:=TSCPJsonFormatter.createGreetingJsonString(aUser);
+ SendData(_cmd);
+ DoSendCmdData(aUser, _cmd);
+end;
+
+procedure TSCP.sendSmsMsg(aUser: TUser);
+var
+ _cmd: String;
+begin
+ //TSimpleConnectionProtocol.MsgDlg('Ok!');
+
+ _cmd:=TSCPJsonFormatter.createSmsJsonString(aUser);
+
+ SendData(_cmd);
+ DoSendCmdData(aUser, _cmd);
+end;
+
+procedure TSCP.SetUser(const Value: TUser);
+begin
+  FUser := Value;
+end;
+
+end.

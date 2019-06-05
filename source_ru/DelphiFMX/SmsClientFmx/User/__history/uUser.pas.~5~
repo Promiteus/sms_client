@@ -1,0 +1,51 @@
+unit uUser;
+
+interface
+ uses
+  System.SysUtils, System.Types, System.UITypes, System.Classes, System.Variants,
+  FMX.Types;
+
+   Type
+    TUser = class
+  private
+    FipAddress: String;
+    fPort: WORD;
+    FErrMsg: String;
+    FErrType: String;
+    procedure SetipAddress(const Value: String);
+    procedure setPort(const Value: WORD);
+    procedure SetErrMsg(const Value: String);
+    procedure SetErrType(const Value: String);
+
+     public
+       property ipAddress: String read FipAddress write SetipAddress;
+       property Port: WORD read fPort write setPort;
+       property ErrType: String read FErrType write SetErrType;
+       property ErrMsg: String read FErrMsg write SetErrMsg;
+    end;
+
+implementation
+
+{ TUser }
+
+procedure TUser.SetErrMsg(const Value: String);
+begin
+  FErrMsg := Value;
+end;
+
+procedure TUser.SetErrType(const Value: String);
+begin
+  FErrType := Value;
+end;
+
+procedure TUser.SetipAddress(const Value: String);
+begin
+  FipAddress := Value;
+end;
+
+procedure TUser.setPort(const Value: WORD);
+begin
+  fPort := Value;
+end;
+
+end.

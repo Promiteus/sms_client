@@ -1,0 +1,95 @@
+unit uISCP;
+
+interface
+ uses
+  System.SysUtils, System.Types, System.UITypes, System.Classes, System.Variants,
+  FMX.Types, FMX.Controls, uUser, uSmsClient;
+
+  Type
+   TCmdType = (ctGREETING, ctACCESS, ctSMS, ctUNKNOWN_CMD, ctCLOSE_SOCK);
+   TMsgType = (mtERR, mtINFO, mtINFO_IP, mtINFO_IP_SEND);
+
+   TSimpleConnectionProtocol = class abstract
+     public
+        function hasCommand(cmd: String): Boolean; virtual; abstract;
+      	procedure parseCmd(cmd: String; stat: TCmdType); virtual; abstract;
+        procedure sendAuth(aUset: TUser); virtual; abstract;
+      	procedure sendSmsMsg(aUset: TUser); virtual; abstract;
+	      procedure sendGreeting(aUset: TUser); virtual; abstract;
+	      procedure sendConnectionStat(aUset: TUser); virtual; abstract;
+
+         class procedure MsgLog(aMsg: String; aObject: TObject; aMsgType: TMsgType; mMainFrm: TfrmSmsClient);
+         class procedure ServerErrLog(aUser: TUser; mMainFrm: TfrmSmsClient);
+   end;
+
+   const
+   	KEY_LOGIN = 'username';
+	  KEY_PASS = 'password';
+   	KEY_COMMENTS = 'comments';
+    KEY_SMS_MSG = 'smsMessage';
+  	KEY_TEL_LIST = 'tels';
+    KEY_AUTH = 'auth';
+    KEY_STATUS = 'status';
+  	KEY_CRYPT = 'encryption';
+   	KEY_AUTHORIZED = 'authorized';
+   	KEY_ERR_TYPE = 'errType';
+    KEY_ERR_MSG = 'errMsg';
+    KEY_SOCK_CLOSE = 'closeSocket';
+
+    PROT_HELLO = 'greeting';
+    PROT_AUTH = 'auth';
+	  PROT_SMS = 'sms';
+   	PROT_UNKNOWN = 'error';
+    PROT_CONNECTION = 'connection';
+
+    ERR_INFO = 'Error [class: %s] >> описание: %s';
+    ERR_INFO_SERVER = '[Server error]: %s << %s:%d << [Type: %s] описание: %s';
+    MSG_INFO = 'Info [class: %s] >> %s';
+  	MSG_INFO_MAIN = 'Info [main] >> %s';
+    MSG_INFO_IP = '[Server]: %s << %s:%d << %s';
+    MSG_INFO_IP_SEND = '[Client]: %s >> %s:%d >> %s';
+    MSG_INFO_CLOSE_SOCKET = '—оединение с сервером закрыто...';
+
+implementation
+
+
+
+{ TSimpleConnectionProtocol }
+
+class procedure TSimpleConnectionProtocol.MsgLog(aMsg: String; aObject: TObject;
+  aMsgType: TMsgType; mMainFrm: TfrmSmsClient);
+begin
+   case aMsgType of
+
+     mtERR: mMainFrm.mmLogger.Lines.Add(Format(ERR_INFO, [aObject.ClassName, aMsg]));
+
+     mtINFO:
+      begin
+        if aObject = nil then
+           mMainFrm.mmLogger.Lines.Add(Format(MSG_INFO, [aObject.ClassName, aMsg]))
+        else
+           mMainFrm.mmLogger.Lines.Add(Format(MSG_INFO_MAIN, [aMsg]));
+      end;
+     mtINFO_IP:
+
+      if aObject.ClassName = TUser.ClassName then
+       mMainFrm.mmLogger.Lines.Add(Format(MSG_INFO_IP,
+         [FormatDateTime('dd.mm.yyyy hh:mm:ss', now()), TUser(aObject).ipAddress,
+          TUSer(aObject).Port, aMsg]));
+
+     mtINFO_IP_SEND:
+
+      if aObject.ClassName = TUser.ClassName then
+         mMainFrm.mmLogger.Lines.Add(Format(MSG_INFO_IP_SEND,
+         [FormatDateTime('dd.mm.yyyy hh:mm:ss', now()), TUser(aObject).ipAddress,
+          TUSer(aObject).Port, aMsg]));
+   end;
+end;
+
+class procedure TSimpleConnectionProtocol.ServerErrLog(aUser: TUser; mMainFrm: TfrmSmsClient);
+begin
+   mMainFrm.mmLogger.Lines.Add(Format(ERR_INFO_SERVER, [FormatDateTime('dd.mm.yyyy hh:mm:ss',
+    now()), aUser.ipAddress, aUser.Port, aUser.ErrType, aUSer.ErrMsg]));
+end;
+
+end.
